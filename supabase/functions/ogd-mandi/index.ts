@@ -39,6 +39,21 @@ interface ProxyPayload {
 
 const cache = new Map<string, { expires: number; payload: ProxyPayload }>();
 
+/** Short, key-free description of a fetch failure. */
+const describeNetworkError = (err: unknown): string => {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/refused/i.test(msg)) return "connection refused";
+  if (/reset/i.test(msg)) return "connection reset";
+  if (/timed? ?out/i.test(msg)) return "timeout";
+  if (/dns|resolve/i.test(msg)) return "dns failure";
+  if (/tls|certificate/i.test(msg)) return "tls failure";
+  return "unreachable";
+};
+
+/** Strip anything that looks like our API key from a message before returning it. */
+const redact = (msg: string, apiKey: string): string =>
+  apiKey ? msg.split(apiKey).join("[redacted]") : msg;
+
 const json = (body: unknown, status = 200, extra: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), {
     status,
@@ -70,7 +85,13 @@ async function fetchAll(
     url.searchParams.set("offset", String(offset));
     for (const [k, v] of Object.entries(filters)) url.searchParams.set(`filters[${k}]`, v);
 
-    const res = await fetch(url.toString(), { headers: { Accept: "application/json" } });
+    let res: Response;
+    try {
+      res = await fetch(url.toString(), { headers: { Accept: "application/json" } });
+    } catch (err) {
+      // Never surface the raw error: Deno includes the full URL (and the key) in it.
+      throw new Error(`network error contacting data.gov.in (${describeNetworkError(err)})`);
+    }
     if (!res.ok) {
       throw new Error(`data.gov.in responded ${res.status}`);
     }
@@ -122,7 +143,7 @@ Deno.serve(async (req) => {
   } catch (err) {
     // Serve stale data rather than nothing when upstream is down.
     if (hit) return json({ ...hit.payload, cached: true, stale: true }, 200);
-    const message = err instanceof Error ? err.message : "Upstream error";
+    const message = redact(err instanceof Error ? err.message : "Upstream error", apiKey);
     return json({ error: `Could not reach data.gov.in: ${message}` }, 502);
   }
 });

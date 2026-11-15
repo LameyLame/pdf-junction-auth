@@ -44,7 +44,7 @@ headers. The client (`src/integrations/ogd/`) calls it and derives the dropdown 
 ```sh
 npm i -g supabase            # or: brew install supabase/tap/supabase
 supabase login
-supabase link --project-ref eoqwbhiskvavaylmjtfo
+supabase link --project-ref bhzeajepzmrryrivmrga
 supabase secrets set DATA_GOV_IN_API_KEY=your-key-here
 supabase functions deploy ogd-mandi
 ```
@@ -52,7 +52,7 @@ supabase functions deploy ogd-mandi
 Test it:
 
 ```sh
-curl "https://eoqwbhiskvavaylmjtfo.supabase.co/functions/v1/ogd-mandi?district=Gwalior" \
+curl "https://bhzeajepzmrryrivmrga.supabase.co/functions/v1/ogd-mandi?district=Gwalior" \
   -H "apikey: $VITE_SUPABASE_PUBLISHABLE_KEY"
 ```
 
