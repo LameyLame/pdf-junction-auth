@@ -44,7 +44,7 @@ headers. The client (`src/integrations/ogd/`) calls it and derives the dropdown 
 ```sh
 npm i -g supabase            # or: brew install supabase/tap/supabase
 supabase login
-supabase link --project-ref lfbcdlnzqxwvfnvmarna
+supabase link --project-ref eoqwbhiskvavaylmjtfo
 supabase secrets set DATA_GOV_IN_API_KEY=your-key-here
 supabase functions deploy ogd-mandi
 ```
@@ -52,7 +52,7 @@ supabase functions deploy ogd-mandi
 Test it:
 
 ```sh
-curl "https://lfbcdlnzqxwvfnvmarna.supabase.co/functions/v1/ogd-mandi?district=Gwalior" \
+curl "https://eoqwbhiskvavaylmjtfo.supabase.co/functions/v1/ogd-mandi?district=Gwalior" \
   -H "apikey: $VITE_SUPABASE_PUBLISHABLE_KEY"
 ```
 
@@ -73,7 +73,7 @@ VITE_OGD_MANDI_URL=http://127.0.0.1:54321/functions/v1/ogd-mandi
 | Variable | Where | Purpose |
 | --- | --- | --- |
 | `VITE_SUPABASE_URL` | `.env` (public) | Supabase project URL; defaults to the linked project |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | `.env` (public) | Supabase anon key; defaults to the linked project |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | `.env` (public) | Supabase publishable (anon) key; defaults to the linked project |
 | `VITE_OGD_MANDI_URL` | `.env` (public, optional) | Override the edge-function URL (local dev) |
 | `DATA_GOV_IN_API_KEY` | Supabase secret | data.gov.in key used by the edge function only |
 
