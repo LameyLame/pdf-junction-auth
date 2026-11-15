@@ -97,8 +97,8 @@ const PDFForm = ({ formData, onChange, errors = {} }: PDFFormProps) => {
     [mandi.records, formData.marketPlace],
   );
   const varietyOptions = useMemo(
-    () => varieties(mandi.records, formData.cropName || undefined),
-    [mandi.records, formData.cropName],
+    () => varieties(mandi.records, formData.cropName || undefined, formData.marketPlace || undefined),
+    [mandi.records, formData.cropName, formData.marketPlace],
   );
   const price = useMemo(
     () =>

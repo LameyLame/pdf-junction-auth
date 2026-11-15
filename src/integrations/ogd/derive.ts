@@ -36,8 +36,20 @@ export function commodities(records: Rec[], market?: string): string[] {
   return inMarket.length ? inMarket : distinct(records, "commodity");
 }
 
-export function varieties(records: Rec[], commodity?: string): string[] {
+/**
+ * Varieties of a commodity. When a market is given and it reported that
+ * commodity today, only its varieties are listed; otherwise all markets'.
+ */
+export function varieties(records: Rec[], commodity?: string, market?: string): string[] {
   if (!commodity) return [];
+  if (market) {
+    const local = distinct(
+      records,
+      "variety",
+      (r) => eq(text(r, "commodity"), commodity) && eq(text(r, "market"), market),
+    );
+    if (local.length) return local;
+  }
   return distinct(records, "variety", (r) => eq(text(r, "commodity"), commodity));
 }
 

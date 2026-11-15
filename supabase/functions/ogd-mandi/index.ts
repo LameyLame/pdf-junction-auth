@@ -5,6 +5,10 @@
 // caches per query for 6 hours and answers with permissive CORS so the Vite
 // app can call it directly.
 //
+// data.gov.in refuses connections from outside India, so callers must pin the
+// function to the Mumbai edge with the request header `x-region: ap-south-1`
+// (the app's client does this). Other edge regions get "connection refused".
+//
 // GET /ogd-mandi?state=Madhya%20Pradesh&district=Gwalior&commodity=Wheat&limit=5000
 
 const OGD_RESOURCE_ID = "9ef84268-d588-465a-a308-a864a43d0070";
@@ -16,7 +20,7 @@ const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info, x-region",
 };
 
 interface OgdEnvelope {
@@ -38,6 +42,9 @@ interface ProxyPayload {
 }
 
 const cache = new Map<string, { expires: number; payload: ProxyPayload }>();
+
+const sameText = (a: unknown, b: string) =>
+  String(a ?? "").trim().toLowerCase() === b.trim().toLowerCase();
 
 /** Short, key-free description of a fetch failure. */
 const describeNetworkError = (err: unknown): string => {
@@ -78,16 +85,19 @@ async function fetchAll(
 
   while (records.length < maxRows) {
     const limit = Math.min(PAGE_SIZE, maxRows - records.length);
-    const url = new URL(OGD_BASE);
-    url.searchParams.set("api-key", apiKey);
-    url.searchParams.set("format", "json");
-    url.searchParams.set("limit", String(limit));
-    url.searchParams.set("offset", String(offset));
-    for (const [k, v] of Object.entries(filters)) url.searchParams.set(`filters[${k}]`, v);
+    // Build the query by hand: URLSearchParams encodes spaces as "+", which the
+    // OGD filter parser does not decode, so "Madhya Pradesh" would match nothing.
+    const query = [
+      `api-key=${encodeURIComponent(apiKey)}`,
+      "format=json",
+      `limit=${limit}`,
+      `offset=${offset}`,
+      ...Object.entries(filters).map(([k, v]) => `filters[${k}]=${encodeURIComponent(v)}`),
+    ].join("&");
 
     let res: Response;
     try {
-      res = await fetch(url.toString(), { headers: { Accept: "application/json" } });
+      res = await fetch(`${OGD_BASE}?${query}`, { headers: { Accept: "application/json" } });
     } catch (err) {
       // Never surface the raw error: Deno includes the full URL (and the key) in it.
       throw new Error(`network error contacting data.gov.in (${describeNetworkError(err)})`);
@@ -107,7 +117,13 @@ async function fetchAll(
     if (page.length < limit || (total && offset >= total)) break;
   }
 
-  return { records, fields, total: total || records.length, fetchedAt: new Date().toISOString() };
+  // Safety net: keep only rows that really match the requested filters, in
+  // case upstream ignores a filter (observed when a value was mis-encoded).
+  const matches = (r: Record<string, unknown>) =>
+    Object.entries(filters).every(([k, v]) => sameText(r[k], v));
+  const kept = records.filter(matches);
+
+  return { records: kept, fields, total: kept.length, fetchedAt: new Date().toISOString() };
 }
 
 Deno.serve(async (req) => {

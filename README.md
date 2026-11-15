@@ -49,11 +49,12 @@ supabase secrets set DATA_GOV_IN_API_KEY=your-key-here
 supabase functions deploy ogd-mandi
 ```
 
-Test it:
+Test it (the `x-region` header matters: data.gov.in only accepts connections from Indian IP
+ranges, and Supabase otherwise runs the function at the edge nearest the caller):
 
 ```sh
 curl "https://bhzeajepzmrryrivmrga.supabase.co/functions/v1/ogd-mandi?district=Gwalior" \
-  -H "apikey: $VITE_SUPABASE_PUBLISHABLE_KEY"
+  -H "apikey: $VITE_SUPABASE_PUBLISHABLE_KEY" -H "x-region: ap-south-1"
 ```
 
 The JSON contains `records`, `fields` (the column descriptors echoed from OGD, handy to confirm
@@ -75,6 +76,7 @@ VITE_OGD_MANDI_URL=http://127.0.0.1:54321/functions/v1/ogd-mandi
 | `VITE_SUPABASE_URL` | `.env` (public) | Supabase project URL; defaults to the linked project |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | `.env` (public) | Supabase publishable (anon) key; defaults to the linked project |
 | `VITE_OGD_MANDI_URL` | `.env` (public, optional) | Override the edge-function URL (local dev) |
+| `VITE_OGD_EDGE_REGION` | `.env` (public, optional) | Supabase edge region to pin; default `ap-south-1` (Mumbai) |
 | `DATA_GOV_IN_API_KEY` | Supabase secret | data.gov.in key used by the edge function only |
 
 ## Project layout

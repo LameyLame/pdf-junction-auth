@@ -6,6 +6,13 @@ export const DEFAULT_STATE = "Madhya Pradesh";
 export const OGD_MANDI_URL: string =
   import.meta.env.VITE_OGD_MANDI_URL || `${SUPABASE_URL}/functions/v1/ogd-mandi`;
 
+/**
+ * data.gov.in only accepts connections from Indian IP ranges. Supabase runs an
+ * edge function at the location nearest the caller unless pinned, so every
+ * call asks for the Mumbai edge explicitly.
+ */
+export const OGD_EDGE_REGION: string = import.meta.env.VITE_OGD_EDGE_REGION || "ap-south-1";
+
 export class OgdError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -33,6 +40,7 @@ export async function fetchMandiPrices(
       // Required by the Supabase gateway even when verify_jwt is off.
       apikey: SUPABASE_PUBLISHABLE_KEY,
       Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+      "x-region": OGD_EDGE_REGION,
     },
   });
 

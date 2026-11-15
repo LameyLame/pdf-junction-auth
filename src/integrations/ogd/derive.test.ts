@@ -48,6 +48,10 @@ describe("varieties", () => {
   it("lists varieties of the chosen commodity across all markets", () => {
     expect(varieties(rows, "wheat")).toEqual(["Lokwan", "Mill Quality", "Sharbati"]);
   });
+  it("prefers the chosen market's varieties and falls back to all markets", () => {
+    expect(varieties(rows, "Wheat", "Dabra")).toEqual(["Lokwan", "Sharbati"]);
+    expect(varieties(rows, "Wheat", "Custom Mandi")).toEqual(["Lokwan", "Mill Quality", "Sharbati"]);
+  });
   it("is empty without a commodity", () => {
     expect(varieties(rows)).toEqual([]);
   });
