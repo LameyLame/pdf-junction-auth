@@ -1,0 +1,128 @@
+// Supabase Edge Function: proxy for the data.gov.in (OGD) Agmarknet dataset
+// "Current Daily Price of Various Commodities from Various Markets (Mandi)".
+//
+// Keeps DATA_GOV_IN_API_KEY server-side, pages through the upstream results,
+// caches per query for 6 hours and answers with permissive CORS so the Vite
+// app can call it directly.
+//
+// GET /ogd-mandi?state=Madhya%20Pradesh&district=Gwalior&commodity=Wheat&limit=5000
+
+const OGD_RESOURCE_ID = "9ef84268-d588-465a-a308-a864a43d0070";
+const OGD_BASE = `https://api.data.gov.in/resource/${OGD_RESOURCE_ID}`;
+const PAGE_SIZE = 1000;
+const MAX_ROWS = 5000;
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
+};
+
+interface OgdEnvelope {
+  total?: number;
+  count?: number;
+  limit?: number | string;
+  offset?: number | string;
+  field?: { id: string; name: string; type: string }[];
+  records?: Record<string, unknown>[];
+  message?: string;
+  status?: string;
+}
+
+interface ProxyPayload {
+  records: Record<string, unknown>[];
+  fields: { id: string; name: string; type: string }[];
+  total: number;
+  fetchedAt: string;
+}
+
+const cache = new Map<string, { expires: number; payload: ProxyPayload }>();
+
+const json = (body: unknown, status = 200, extra: Record<string, string> = {}) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json; charset=utf-8", ...CORS_HEADERS, ...extra },
+  });
+
+const clampLimit = (raw: string | null): number => {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return MAX_ROWS;
+  return Math.min(Math.floor(n), MAX_ROWS);
+};
+
+async function fetchAll(
+  apiKey: string,
+  filters: Record<string, string>,
+  maxRows: number,
+): Promise<ProxyPayload> {
+  const records: Record<string, unknown>[] = [];
+  let fields: ProxyPayload["fields"] = [];
+  let total = 0;
+  let offset = 0;
+
+  while (records.length < maxRows) {
+    const limit = Math.min(PAGE_SIZE, maxRows - records.length);
+    const url = new URL(OGD_BASE);
+    url.searchParams.set("api-key", apiKey);
+    url.searchParams.set("format", "json");
+    url.searchParams.set("limit", String(limit));
+    url.searchParams.set("offset", String(offset));
+    for (const [k, v] of Object.entries(filters)) url.searchParams.set(`filters[${k}]`, v);
+
+    const res = await fetch(url.toString(), { headers: { Accept: "application/json" } });
+    if (!res.ok) {
+      throw new Error(`data.gov.in responded ${res.status}`);
+    }
+    const body = (await res.json()) as OgdEnvelope;
+    if (body.status && body.status !== "ok" && !body.records) {
+      throw new Error(body.message || "data.gov.in returned an error");
+    }
+    const page = Array.isArray(body.records) ? body.records : [];
+    if (Array.isArray(body.field) && body.field.length) fields = body.field;
+    total = Number(body.total ?? total);
+    records.push(...page);
+    offset += page.length;
+    if (page.length < limit || (total && offset >= total)) break;
+  }
+
+  return { records, fields, total: total || records.length, fetchedAt: new Date().toISOString() };
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
+  if (req.method !== "GET") return json({ error: "Method not allowed" }, 405);
+
+  const apiKey = Deno.env.get("DATA_GOV_IN_API_KEY");
+  if (!apiKey) {
+    return json({ error: "DATA_GOV_IN_API_KEY is not configured on the edge function" }, 500);
+  }
+
+  const url = new URL(req.url);
+  const filters: Record<string, string> = {};
+  const state = url.searchParams.get("state")?.trim() || "Madhya Pradesh";
+  filters.state = state;
+  const district = url.searchParams.get("district")?.trim();
+  if (district) filters.district = district;
+  const commodity = url.searchParams.get("commodity")?.trim();
+  if (commodity) filters.commodity = commodity;
+  const maxRows = clampLimit(url.searchParams.get("limit"));
+
+  const cacheKey = JSON.stringify({ filters, maxRows });
+  const hit = cache.get(cacheKey);
+  const now = Date.now();
+  if (hit && hit.expires > now) {
+    return json({ ...hit.payload, cached: true }, 200, { "Cache-Control": "public, max-age=21600" });
+  }
+
+  try {
+    const payload = await fetchAll(apiKey, filters, maxRows);
+    cache.set(cacheKey, { expires: now + CACHE_TTL_MS, payload });
+    return json({ ...payload, cached: false }, 200, { "Cache-Control": "public, max-age=21600" });
+  } catch (err) {
+    // Serve stale data rather than nothing when upstream is down.
+    if (hit) return json({ ...hit.payload, cached: true, stale: true }, 200);
+    const message = err instanceof Error ? err.message : "Upstream error";
+    return json({ error: `Could not reach data.gov.in: ${message}` }, 502);
+  }
+});
